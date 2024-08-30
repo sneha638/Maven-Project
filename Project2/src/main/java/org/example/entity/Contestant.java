@@ -2,7 +2,6 @@ package org.example.entity;
 
 import jakarta.persistence.*;
 
-
 @Entity
 @Table(name = "contestant")
 public class Contestant {
@@ -10,8 +9,6 @@ public class Contestant {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
-
-
     @Column(name = "Username", nullable = false, length = 255)
     private String username;
     @Column(name = "Marks")

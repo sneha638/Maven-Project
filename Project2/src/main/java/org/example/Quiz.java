@@ -14,14 +14,10 @@ import java.util.Scanner;
 
 public class Quiz {
 
-    private Connection getConnection() throws SQLException {
-        try {
-            Class.forName("com.mysql.cj.jdbc.Driver");
-        } catch (ClassNotFoundException e) {
-            throw new SQLException("MySQL JDBC Driver not found.", e);
+        private SessionFactory sessionFactory;
+        public Quiz() {
+            sessionFactory  = new Configuration().configure("hibernate.cfg.xml").buildSessionFactory();
         }
-        return DriverManager.getConnection("jdbc:mysql://localhost:3306/quizdb", "root", "Sneha123*");
-    }
     public void addQuestion() {
         Scanner scanner = new Scanner(System.in);
         int correctOption = 0;
@@ -37,46 +33,44 @@ public class Quiz {
         correctOption = Integer.parseInt(scanner.nextLine());
 
         Question q = new Question(question, option1, option2, option3, correctOption);
-        SessionFactory sf = new Configuration().configure("hibernate.cfg.xml").buildSessionFactory();
-        Session session = sf.openSession();
+        Session session = sessionFactory.openSession();
         session.beginTransaction();
         session.persist(q);
         session.getTransaction().commit();
         System.out.println("Sample question added to the database.");
 
     }
-
     public void startQuiz() {
-        String username;
-        int marks = 0;
         Scanner scanner = new Scanner(System.in);
-
         System.out.print("Enter your username: ");
-        username = scanner.nextLine();
+        String username = scanner.nextLine();
 
-        try (Connection conn = getConnection()) {
-            if (conn == null) {
-                System.out.println("Failed to make connection!");
-                return;
-            }
-            PreparedStatement checkStmt = conn.prepareStatement("SELECT COUNT(*) FROM contestants WHERE username = ?");
-            checkStmt.setString(1, username);
-            ResultSet checkRs = checkStmt.executeQuery();
-            checkRs.next();
-            if (checkRs.getInt(1) > 0) {
+        Session session = sessionFactory.openSession();
+            Query<Long> checkQuery = session.createQuery("SELECT COUNT(c) FROM Contestant c WHERE c.username = :username", Long.class);
+            checkQuery.setParameter("username", username);
+            Long count = checkQuery.uniqueResult();
+
+            if (count > 0) {
                 System.out.println("Sorry " + username + ", you have already attended the quiz.");
                 return;
+            } else {
+                System.out.println("Hi " + username + ", let's start the Quiz.\nGood Luck!");
             }
-            System.out.println("Hi " + username + ", let's start the Quiz.\nGood Luck!");
-            Statement stmt = conn.createStatement();
-            ResultSet rs = stmt.executeQuery("SELECT * FROM questions ORDER BY RAND() LIMIT 5");
 
-            while (rs.next()) {
+            // Fetch random questions
+            Query<Question> questionQuery = session.createQuery("FROM Question ORDER BY RAND()", Question.class);
+            questionQuery.setMaxResults(5);
+            List<Question> questions = questionQuery.list();
+            int marks = 0;
+
+            for (Question question : questions) {
+                int answer;
                 do {
-                    System.out.println(rs.getString("question") + "\n1. " + rs.getString("option1") + "\n2. " + rs.getString("option2") + "\n3. " + rs.getString("option3") + "\nEnter your answer (1/2/3): ");
-                    int answer = scanner.nextInt();
+                    System.out.println(question.getQuestion() + "\n1. " + question.getOption1() + "\n2. " + question.getOption2() + "\n3. " + question.getOption3());
+                    System.out.print("Enter your answer (1/2/3): ");
+                    answer = scanner.nextInt();
                     if (answer == 1 || answer == 2 || answer == 3) {
-                        if (answer == rs.getInt("correct_option")) {
+                        if (answer == question.getCorrectOption()) {
                             marks++;
                         }
                         break;
@@ -85,67 +79,42 @@ public class Quiz {
                     }
                 } while (true);
             }
-            Contestant contestant = new Contestant(username, marks);
-            SessionFactory sf = new Configuration().configure("hibernate.cfg.xml").buildSessionFactory();
-            Session session = sf.openSession();
-            session.beginTransaction();
-            session.persist(contestant);
-            session.getTransaction().commit();
-            System.out.println("Quiz completed \n You scored: "  + marks);
 
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            scanner.close();
-        }
+            Transaction transaction = session.beginTransaction();
+            Contestant contestant = new Contestant(username, marks);
+            session.persist(contestant);
+            transaction.commit();
+            System.out.println("Quiz completed.\nYou scored: " + marks);
+
     }
 
     public void viewResult() {
-        String username;
         Scanner scanner = new Scanner(System.in);
-
         System.out.print("Enter your username: ");
-        username = scanner.nextLine();
+        String username = scanner.nextLine();
 
-        try (Connection conn = getConnection();
-             PreparedStatement stmt = conn.prepareStatement("SELECT marks FROM contestants WHERE username = ?")) {
+        Session session = sessionFactory.openSession();
+            Query<Contestant> query = session.createQuery("FROM Contestant WHERE username = :username", Contestant.class);
+            query.setParameter("username", username);
+            Contestant contestant = query.uniqueResult();
 
-            if (conn == null) {
-                System.out.println("Failed to make connection!");
-                return;
-            }
-
-            stmt.setString(1, username);
-            ResultSet rs = stmt.executeQuery();
-            if (rs.next()) {
-                System.out.println(username + ", your score is: " + rs.getInt("marks"));
+            if (contestant != null) {
+                System.out.println(username + ", your score is: " + contestant.getMarks());
             } else {
                 System.out.println("No results found for user: " + username);
             }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        } finally {
-            scanner.close();
-        }
+
     }
 
     public void viewAllContestants() {
-        try (Connection conn = getConnection();
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery("SELECT username, marks FROM contestants")) {
+       Session session = sessionFactory.openSession();
+            Query<Contestant> query = session.createQuery("FROM Contestant", Contestant.class);
+            List<Contestant> contestants = query.list();
 
-            if (conn == null) {
-                System.out.println("Failed to make connection!");
-                return;
-            }
+            System.out.println("Results of all contestants:");
+            contestants.forEach(contestant ->
+                    System.out.println("Username: " + contestant.getUsername() + ", Marks: " + contestant.getMarks()));
 
-            System.out.println("Result of all contestants:");
-            while (rs.next()) {
-                System.out.println("Username: " + rs.getString("username") + ", Marks: " + rs.getInt("marks"));
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
     }
 }
 
